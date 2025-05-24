@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { BookOpen, Loader } from 'lucide-react';
-import { supabase } from "C:/Users/LENOVO/Downloads/project-bolt-sb1-fccpflcy/project/src/lib/supabase.ts";
- 
+import { signUp } from '../../lib/supabase'; 
+
 interface RegisterFormData {
   fullName: string;
   email: string;
@@ -12,6 +12,7 @@ interface RegisterFormData {
 }
 
 export const RegisterPage: React.FC = () => {
+  const navigate = useNavigate();
   const [role, setRole] = useState<'student' | 'teacher'>('student');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,51 +33,50 @@ export const RegisterPage: React.FC = () => {
     try {
       console.log("Начинаем регистрацию с данными:", data);
   
-      // Регистрация в Supabase Auth
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-      });
+      // Используем готовую функцию signUp из supabase.ts
+      const { data: signUpData, error: signUpError } = await signUp(
+        data.email, 
+        data.password, 
+        {
+          full_name: data.fullName,
+          role: role
+        }
+      );
   
-      console.log("Ответ от supabase.auth.signUp:", signUpData, signUpError);
+      console.log("Ответ от signUp:", signUpData, signUpError);
   
       if (signUpError) {
         console.error("Ошибка при регистрации:", signUpError);
-        setError("Ошибка регистрации: " + signUpError.message);
-        setIsLoading(false);
+        
+        // Более детальная обработка ошибок
+        if (signUpError.message.includes('already registered')) {
+          setError('Пользователь с таким email уже существует');
+        } else if (signUpError.message.includes('Password')) {
+          setError('Пароль должен содержать минимум 6 символов');
+        } else {
+          setError("Ошибка регистрации: " + signUpError.message);
+        }
         return;
       }
   
       if (!signUpData?.user) {
         console.warn("Регистрация прошла, но пользователь не создан:", signUpData);
         setError('Не удалось создать пользователя');
-        setIsLoading(false);
         return;
       }
   
-      // Добавление профиля в таблицу profiles
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: signUpData.user.id,
-        full_name: data.fullName,
-        role: role,
-        email: data.email,
-      });
-  
-      if (profileError) {
-        console.error("Ошибка вставки в таблицу profiles:", profileError);
-        setError('Ошибка создания профиля: ' + profileError.message);
-        setIsLoading(false);
-        return;
-      }
-  
+      // Успешная регистрация
       alert('Регистрация прошла успешно! Проверьте email для подтверждения.');
+      
+      // Перенаправляем на страницу входа
+      navigate('/login');
   
     } catch (err: any) {
       console.error("Непредвиденная ошибка при регистрации:", err);
       setError('Произошла ошибка. Попробуйте еще раз.');
+    } finally {
+      setIsLoading(false);
     }
-  
-    setIsLoading(false);
   };
 
   return (

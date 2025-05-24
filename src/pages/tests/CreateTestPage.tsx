@@ -14,7 +14,7 @@ interface QuestionFormData {
 interface TestFormData {
   title: string;
   description: string;
-  topic: string;
+  subject: string; // Changed from 'topic' to 'subject'
   difficulty: 'easy' | 'medium' | 'hard';
   questions: QuestionFormData[];
 }
@@ -36,7 +36,7 @@ export const CreateTestPage: React.FC = () => {
     defaultValues: {
       title: '',
       description: '',
-      topic: '',
+      subject: '', // Changed from 'topic' to 'subject'
       difficulty: 'medium',
       questions: [
         {
@@ -62,16 +62,16 @@ export const CreateTestPage: React.FC = () => {
     
     // Transform questions for API
     const transformedQuestions = data.questions.map((q, index) => ({
-      text: q.text,
+      question_text: q.text, // Match database field name
       options: q.options,
-      correct_option: q.correctOption,
-      order: index + 1,
+      correct_answer: String(q.correctOption), // Convert to string and match field name
+      order_index: index + 1, // Match database field name
     }));
     
     const testData = {
       title: data.title,
       description: data.description,
-      topic: data.topic,
+      subject: data.subject, // Changed from 'topic' to 'subject'
       difficulty: data.difficulty,
       created_by: user.id,
     };
@@ -91,7 +91,7 @@ export const CreateTestPage: React.FC = () => {
     });
   };
   
-  const isInfoValid = watch('title') && watch('description') && watch('topic');
+  const isInfoValid = watch('title') && watch('description') && watch('subject'); // Changed from 'topic'
   
   return (
     <div className="max-w-4xl mx-auto animate-fade-in">
@@ -173,18 +173,18 @@ export const CreateTestPage: React.FC = () => {
               </div>
               
               <div>
-                <label htmlFor="topic" className="form-label">
+                <label htmlFor="subject" className="form-label">
                   Subject/Topic
                 </label>
                 <input
-                  id="topic"
+                  id="subject"
                   type="text"
-                  className={`form-input ${errors.topic ? 'border-error-500 focus:ring-error-500' : ''}`}
+                  className={`form-input ${errors.subject ? 'border-error-500 focus:ring-error-500' : ''}`}
                   placeholder="e.g., Mathematics, History, Science"
-                  {...register('topic', { required: 'Topic is required' })}
+                  {...register('subject', { required: 'Subject is required' })} // Changed from 'topic'
                 />
-                {errors.topic && (
-                  <p className="form-error">{errors.topic.message}</p>
+                {errors.subject && (
+                  <p className="form-error">{errors.subject.message}</p>
                 )}
               </div>
               

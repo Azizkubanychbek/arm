@@ -8,7 +8,10 @@ import {
   UserCheck, 
   Award, 
   BarChart3,
-  Loader
+  Loader,
+  Edit,
+  Users,
+  Calendar
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -84,6 +87,50 @@ export const DashboardPage: React.FC = () => {
     
     fetchResults();
   }, [user, isTeacher]);
+
+  // Компонент для отображения теста преподавателя (без возможности сдачи)
+  const TeacherTestCard = ({ test }: { test: any }) => (
+    <div className="card p-4 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <h3 className="font-semibold text-gray-900 mb-1">{test.title}</h3>
+          <p className="text-sm text-gray-600 mb-2 line-clamp-2">{test.description}</p>
+          
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            <div className="flex items-center gap-1">
+              <FileText className="h-3 w-3" />
+              <span>{test.questions?.length || 0} questions</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              <span>{test.submissions || 0} submissions</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              <span>{new Date(test.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex gap-2 ml-4">
+          <Link
+            to={`/tests/edit/${test.id}`}
+            className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+            title="Edit test"
+          >
+            <Edit className="h-4 w-4" />
+          </Link>
+          <Link
+            to={`/tests/analytics/${test.id}`}
+            className="p-2 text-gray-400 hover:text-secondary-600 hover:bg-secondary-50 rounded-lg transition-colors"
+            title="View analytics"
+          >
+            <BarChart3 className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
   
   return (
     <div className="animate-fade-in">
@@ -178,9 +225,13 @@ export const DashboardPage: React.FC = () => {
             </div>
           ) : tests.length > 0 ? (
             <div className="grid grid-cols-1 gap-4">
-              {tests.slice(0, 3).map((test) => (
-                <TestCard key={test.id} test={test} />
-              ))}
+              {tests.slice(0, 3).map((test) => 
+                isTeacher ? (
+                  <TeacherTestCard key={test.id} test={test} />
+                ) : (
+                  <TestCard key={test.id} test={test} />
+                )
+              )}
             </div>
           ) : (
             <div className="card p-8 text-center">

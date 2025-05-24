@@ -3,25 +3,26 @@ import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
 
 type Test = Database['public']['Tables']['tests']['Row'];
-type Question = Database['public']['Tables']['questions']['Row'];
+type TestQuestion = Database['public']['Tables']['test_questions']['Row'];
+type TestSubmission = Database['public']['Tables']['test_submissions']['Row'];
 type TestResult = Database['public']['Tables']['test_results']['Row'];
 
 interface TestState {
   tests: Test[];
-  currentTest: (Test & { questions: Question[] }) | null;
+  currentTest: (Test & { test_questions: TestQuestion[] }) | null;
   isLoading: boolean;
   error: string | null;
   
   // Teacher actions
-  createTest: (test: Omit<Test, 'id' | 'created_at'>, questions: Omit<Question, 'id' | 'created_at' | 'test_id'>[]) => Promise<string | null>;
+  createTest: (test: Omit<Test, 'id' | 'created_at' | 'updated_at'>, questions: Omit<TestQuestion, 'id' | 'created_at' | 'test_id'>[]) => Promise<string | null>;
   getTeacherTests: (teacherId: string) => Promise<void>;
-  getTestResults: (testId: string) => Promise<TestResult[]>;
+  getTestSubmissions: (testId: string) => Promise<TestSubmission[]>;
   
   // Student actions
   getAvailableTests: () => Promise<void>;
   getTestById: (id: string) => Promise<void>;
-  submitTestResult: (result: Omit<TestResult, 'id' | 'completed_at'>) => Promise<void>;
-  getStudentResults: (studentId: string) => Promise<TestResult[]>;
+  submitTestResult: (result: Omit<TestSubmission, 'id' | 'started_at' | 'completed_at' | 'graded_at'>) => Promise<void>;
+  getStudentResults: (studentId: string) => Promise<TestSubmission[]>;
   
   // Shared actions
   clearCurrentTest: () => void;
@@ -50,11 +51,11 @@ export const useTestStore = create<TestState>((set, get) => ({
       const questionsWithTestId = questionsData.map((q, index) => ({
         ...q,
         test_id: test.id,
-        order: index + 1,
+        order_index: index + 1,
       }));
       
       const { error: questionsError } = await supabase
-        .from('questions')
+        .from('test_questions')
         .insert(questionsWithTestId);
       
       if (questionsError) throw questionsError;
@@ -86,12 +87,15 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
   
-  getTestResults: async (testId) => {
+  getTestSubmissions: async (testId) => {
     set({ isLoading: true, error: null });
     try {
       const { data, error } = await supabase
-        .from('test_results')
-        .select('*, profiles(full_name)')
+        .from('test_submissions')
+        .select(`
+          *,
+          profiles!test_submissions_student_id_fkey(full_name, email)
+        `)
         .eq('test_id', testId)
         .order('completed_at', { ascending: false });
       
@@ -111,6 +115,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       const { data, error } = await supabase
         .from('tests')
         .select('*')
+        .eq('is_active', true)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
@@ -125,28 +130,37 @@ export const useTestStore = create<TestState>((set, get) => ({
   getTestById: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      // Get test
-      const { data: test, error: testError } = await supabase
+      // Get test with questions
+      const { data: testWithQuestions, error } = await supabase
         .from('tests')
-        .select('*')
+        .select(`
+          *,
+          test_questions (
+            id,
+            question_text,
+            question_type,
+            options,
+            correct_answer,
+            explanation,
+            points,
+            order_index
+          )
+        `)
         .eq('id', id)
+        .eq('is_active', true)
         .single();
       
-      if (testError) throw testError;
+      if (error) throw error;
+      if (!testWithQuestions) throw new Error('Test not found');
       
-      // Get questions
-      const { data: questions, error: questionsError } = await supabase
-        .from('questions')
-        .select('*')
-        .eq('test_id', id)
-        .order('order', { ascending: true });
-      
-      if (questionsError) throw questionsError;
+      // Sort questions by order_index
+      const sortedQuestions = (testWithQuestions.test_questions || [])
+        .sort((a, b) => a.order_index - b.order_index);
       
       set({ 
         currentTest: { 
-          ...test, 
-          questions: questions || [] 
+          ...testWithQuestions, 
+          test_questions: sortedQuestions
         } 
       });
     } catch (error) {
@@ -156,16 +170,47 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
   
-  submitTestResult: async (resultData) => {
+  submitTestResult: async (submissionData) => {
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
-        .from('test_results')
-        .insert([resultData]);
+      // Insert test submission
+      const { data: submission, error: submissionError } = await supabase
+        .from('test_submissions')
+        .insert([{
+          ...submissionData,
+          completed_at: new Date().toISOString(),
+          status: 'completed'
+        }])
+        .select()
+        .single();
       
-      if (error) throw error;
+      if (submissionError) throw submissionError;
+      if (!submission) throw new Error('Failed to create submission');
+      
+      // Get current test to create detailed results
+      const currentTest = get().currentTest;
+      if (currentTest && currentTest.test_questions) {
+        const results = currentTest.test_questions.map(question => ({
+          submission_id: submission.id,
+          question_id: question.id,
+          student_answer: submissionData.answers[question.id] || '',
+          correct_answer: question.correct_answer,
+          is_correct: submissionData.answers[question.id] === question.correct_answer,
+          points_earned: submissionData.answers[question.id] === question.correct_answer 
+            ? (question.points || 1) : 0,
+          points_possible: question.points || 1
+        }));
+        
+        const { error: resultsError } = await supabase
+          .from('test_results')
+          .insert(results);
+        
+        if (resultsError) throw resultsError;
+      }
+      
     } catch (error) {
       set({ error: (error as Error).message });
+      throw error; // Re-throw to handle in component
     } finally {
       set({ isLoading: false });
     }
@@ -175,9 +220,18 @@ export const useTestStore = create<TestState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { data, error } = await supabase
-        .from('test_results')
-        .select('*, tests(title, topic, difficulty)')
-        .eq('user_id', studentId)
+        .from('test_submissions')
+        .select(`
+          *,
+          tests (
+            title,
+            subject,
+            difficulty,
+            total_questions
+          )
+        `)
+        .eq('student_id', studentId)
+        .eq('status', 'completed')
         .order('completed_at', { ascending: false });
       
       if (error) throw error;
